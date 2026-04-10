@@ -27,6 +27,7 @@ const state = {
   authReady: !supabaseClient,
   backendStatus: supabaseClient ? "Supabase 연결 확인 중" : "로컬 저장 모드",
   syncError: "",
+  isAdmin: false,
 };
 
 window.addEventListener("hashchange", renderApp);
@@ -102,6 +103,18 @@ function renderLibrary() {
     attrs: { "aria-labelledby": "library-title" },
   });
 
+  const createPromptAction =
+    supabaseClient && state.authReady && !state.session
+      ? createNode("button", {
+          className: "ghost-button",
+          text: "로그인 후 추가",
+          type: "button",
+        })
+      : createLink("#/new", "새 프롬프트", "primary-button");
+  if (createPromptAction.tagName === "BUTTON") {
+    createPromptAction.addEventListener("click", () => showToast("프롬프트를 추가하려면 로그인해 주세요."));
+  }
+
   const hero = createNode("div", { className: "view-heading" }, [
     createNode("div", {}, [
       createNode("p", { className: "eyebrow", text: "Library" }),
@@ -111,7 +124,7 @@ function renderLibrary() {
         text: "카드에서 분류를 훑고, 상세 화면에서 버전과 순차 프롬프트를 복사하세요.",
       }),
     ]),
-    createLink("#/new", "새 프롬프트", "primary-button"),
+    createPromptAction,
   ]);
 
   const controls = renderLibraryControls(taxonomy);
@@ -188,9 +201,11 @@ function renderBackendPanel() {
     panel.append(
       createNode("div", {}, [
         createNode("strong", { text: "Supabase 저장을 사용하려면 로그인해 주세요." }),
-        createNode("p", {
-          text: state.syncError || "이메일로 받은 링크를 열면 서버 저장소와 동기화됩니다.",
-        }),
+      createNode("p", {
+        text:
+          state.syncError ||
+          "로그인하면 내 비공개 프롬프트를 저장하고, 공개 프롬프트는 링크로 공유할 수 있습니다.",
+      }),
       ]),
       form
     );
@@ -216,7 +231,9 @@ function renderBackendPanel() {
   panel.append(
     createNode("div", {}, [
       createNode("strong", { text: `${state.session.user.email || "로그인됨"}` }),
-      createNode("p", { text: state.syncError || state.backendStatus }),
+      createNode("p", {
+        text: state.syncError || `${state.backendStatus}${state.isAdmin ? " · 관리자" : ""}`,
+      }),
     ]),
     createNode("div", { className: "backend-actions" }, [syncButton, signOutButton])
   );
@@ -378,6 +395,7 @@ function renderGroupCard(group) {
   }
 
   const meta = createNode("div", { className: "card-meta" }, [
+    createNode("span", { text: group.isPublic ? "공개" : "비공개" }),
     createNode("span", { text: updatedDate ? `${updatedDate} 수정` : "수정일 없음" }),
     createNode("span", { text: `${group.versions.length}개 버전` }),
   ]);
@@ -491,6 +509,15 @@ function refreshLibrary(focusId) {
 
 function renderDetail(group) {
   document.title = `${group.title} - 프롬프트 라이브러리`;
+  const canManage = canManageGroup(group);
+  const headingActions = createNode("div", { className: "heading-actions" });
+
+  if (canManage) {
+    headingActions.append(
+      createLink(`#/edit/${encodeURIComponent(group.id)}`, "수정", "primary-button"),
+      renderDeleteGroupButton(group)
+    );
+  }
 
   const view = createNode("section", {
     className: "detail-view",
@@ -507,13 +534,11 @@ function renderDetail(group) {
         text: group.description || "설명이 없는 프롬프트 그룹입니다.",
       }),
     ]),
-    createNode("div", { className: "heading-actions" }, [
-      createLink(`#/edit/${encodeURIComponent(group.id)}`, "수정", "primary-button"),
-      renderDeleteGroupButton(group),
-    ]),
+    headingActions,
   ]);
 
   const meta = createNode("div", { className: "detail-meta" }, [
+    renderMetaItem("공개 상태", group.isPublic ? "공개" : "비공개"),
     renderMetaItem("카테고리", group.category || "없음"),
     renderMetaItem("사용처", group.useCases.length ? group.useCases.join(", ") : "없음"),
     renderMetaItem("태그", group.tags.length ? group.tags.map((tag) => `#${tag}`).join(" ") : "없음"),
@@ -629,6 +654,14 @@ function renderDeleteGroupButton(group) {
 function renderEditor(existingGroup) {
   const isEdit = Boolean(existingGroup);
   const group = cloneGroup(existingGroup) || createEmptyGroup();
+  if (!isEdit && supabaseClient && !state.session) {
+    renderMissing("프롬프트를 추가하려면 로그인해 주세요.");
+    return;
+  }
+  if (isEdit && !canManageGroup(group)) {
+    renderMissing("이 프롬프트를 수정할 권한이 없어요.");
+    return;
+  }
   document.title = isEdit ? `${group.title} 수정 - 프롬프트 라이브러리` : "새 프롬프트 - 프롬프트 라이브러리";
 
   const taxonomy = collectTaxonomy();
@@ -666,6 +699,7 @@ function renderEditor(existingGroup) {
     }),
     datalist,
     renderTextField("groupTags", "태그", group.tags.join(", "), "쉼표로 구분: 리뷰, 자동화, 초안"),
+    renderPublicField(group.isPublic),
     renderUseCaseEditor(group.useCases),
     renderVersionsEditor(group.versions)
   );
@@ -723,6 +757,19 @@ function renderTextAreaField(id, label, value, placeholder, rows = 6, required =
     required,
   });
   return createNode("label", { className: "field-label", text: label }, [input]);
+}
+
+function renderPublicField(isPublic) {
+  const checkbox = createNode("input", {
+    id: "groupIsPublic",
+    type: "checkbox",
+    checked: Boolean(isPublic),
+  });
+
+  return createNode("label", { className: "checkbox-pill visibility-toggle" }, [
+    checkbox,
+    createNode("span", { text: "공개 프롬프트로 공유" }),
+  ]);
 }
 
 function renderUseCaseEditor(useCases) {
@@ -1084,6 +1131,8 @@ function collectEditorData(form, draftGroup, existingGroup) {
     tags: parseList(form.querySelector("#groupTags").value),
     useCases: collectUseCases(form),
     versions,
+    isPublic: form.querySelector("#groupIsPublic").checked,
+    ownerId: existingGroup?.ownerId || state.session?.user?.id || "",
     createdAt: existingGroup?.createdAt || now,
     updatedAt: now,
   };
@@ -1097,12 +1146,12 @@ function collectUseCases(form) {
   return uniqueValues([...presets, ...custom]);
 }
 
-function renderMissing() {
+function renderMissing(message = "프롬프트를 찾을 수 없어요.") {
   document.title = "프롬프트를 찾을 수 없음";
   app.appendChild(
     createNode("section", { className: "missing-view" }, [
       createNode("p", { className: "eyebrow", text: "Not found" }),
-      createNode("h2", { text: "프롬프트를 찾을 수 없어요." }),
+      createNode("h2", { text: message }),
       createNode("p", {
         className: "view-copy",
         text: "삭제되었거나 잘못된 링크일 수 있습니다.",
@@ -1180,28 +1229,26 @@ async function initializeBackend() {
 
     state.session = data.session;
     state.authReady = true;
+    await refreshAdminStatus();
 
     supabaseClient.auth.onAuthStateChange(async (_event, session) => {
       state.session = session;
       state.authReady = true;
       state.syncError = "";
+      await refreshAdminStatus();
 
       if (session) {
         await loadRemoteGroups({ migrateLocalWhenEmpty: true });
       } else {
-        state.backendStatus = "로그아웃됨. 로컬 백업을 표시합니다.";
-        state.groups = loadGroups();
-        renderApp();
+        state.backendStatus = "로그아웃됨. 공개 프롬프트를 표시합니다.";
+        await loadRemoteGroups({ migrateLocalWhenEmpty: false, fallbackToLocal: false });
       }
     });
 
-    if (state.session) {
-      await loadRemoteGroups({ migrateLocalWhenEmpty: true });
-      return;
-    }
-
-    state.backendStatus = "로그인이 필요합니다.";
-    renderApp();
+    await loadRemoteGroups({
+      migrateLocalWhenEmpty: Boolean(state.session),
+      fallbackToLocal: false,
+    });
   } catch (error) {
     console.error("Supabase 초기화에 실패했습니다.", error);
     state.authReady = true;
@@ -1256,13 +1303,13 @@ async function signOut() {
   }
 
   state.session = null;
-  state.backendStatus = "로그아웃됨. 로컬 백업을 표시합니다.";
-  state.groups = loadGroups();
-  renderApp();
+  state.isAdmin = false;
+  state.backendStatus = "로그아웃됨. 공개 프롬프트를 표시합니다.";
+  await loadRemoteGroups({ migrateLocalWhenEmpty: false, fallbackToLocal: false });
 }
 
-async function loadRemoteGroups({ migrateLocalWhenEmpty }) {
-  if (!isRemoteReady()) {
+async function loadRemoteGroups({ migrateLocalWhenEmpty, fallbackToLocal = true }) {
+  if (!supabaseClient) {
     return;
   }
 
@@ -1281,13 +1328,13 @@ async function loadRemoteGroups({ migrateLocalWhenEmpty }) {
     }
 
     const remoteGroups = (data || []).map(rowToGroup).filter(Boolean);
-    if (migrateLocalWhenEmpty && remoteGroups.length === 0 && localGroups.length > 0) {
+    if (state.session && migrateLocalWhenEmpty && remoteGroups.length === 0 && localGroups.length > 0) {
       state.groups = localGroups;
       await saveRemoteGroups();
       state.backendStatus = "로컬 데이터를 Supabase로 옮겼어요.";
     } else {
       state.groups = remoteGroups;
-      state.backendStatus = "Supabase와 동기화됨";
+      state.backendStatus = state.session ? "Supabase와 동기화됨" : "공개 프롬프트를 표시합니다.";
     }
 
     writeStorageArray(STORAGE_KEY_V2, state.groups);
@@ -1295,9 +1342,33 @@ async function loadRemoteGroups({ migrateLocalWhenEmpty }) {
   } catch (error) {
     console.error("Supabase 데이터를 불러오지 못했습니다.", error);
     state.syncError = "Supabase 데이터를 불러오지 못해 로컬 백업을 표시합니다.";
+    if (fallbackToLocal) {
+      state.groups = loadGroups();
+    }
     showToast("Supabase 동기화에 실패했어요.");
     renderApp();
   }
+}
+
+async function refreshAdminStatus() {
+  state.isAdmin = false;
+
+  if (!isRemoteReady()) {
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", state.session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("관리자 권한을 확인하지 못했습니다.", error);
+    return;
+  }
+
+  state.isAdmin = Boolean(data);
 }
 
 function loadGroups() {
@@ -1358,11 +1429,11 @@ async function saveGroups() {
 }
 
 async function saveRemoteGroups() {
-  const rows = state.groups.map(groupToRow);
+  const rows = state.groups.filter(canManageGroup).map(groupToRow);
   const currentIds = rows.map((row) => row.id);
   const { data: existingRows, error: selectError } = await supabaseClient
     .from("prompt_groups")
-    .select("id");
+    .select("id, owner_id");
 
   if (selectError) {
     throw selectError;
@@ -1378,7 +1449,10 @@ async function saveRemoteGroups() {
     }
   }
 
-  const idsToDelete = (existingRows || [])
+  const manageableExistingRows = (existingRows || []).filter(
+    (row) => state.isAdmin || row.owner_id === state.session.user.id
+  );
+  const idsToDelete = manageableExistingRows
     .map((row) => row.id)
     .filter((id) => !currentIds.includes(id));
 
@@ -1401,12 +1475,14 @@ function rowToGroup(row) {
 
   return normalizeGroup({
     id: row.id,
+    ownerId: row.owner_id,
     title: row.title,
     description: row.description,
     category: row.category,
     tags: row.tags,
     useCases: row.use_cases,
     versions: row.versions,
+    isPublic: row.is_public,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
@@ -1415,13 +1491,14 @@ function rowToGroup(row) {
 function groupToRow(group) {
   return {
     id: group.id,
-    owner_id: state.session.user.id,
+    owner_id: group.ownerId || state.session.user.id,
     title: group.title,
     description: group.description || "",
     category: group.category || "",
     tags: group.tags || [],
     use_cases: group.useCases || [],
     versions: group.versions || [],
+    is_public: Boolean(group.isPublic),
     created_at: group.createdAt,
     updated_at: group.updatedAt,
   };
@@ -1429,6 +1506,18 @@ function groupToRow(group) {
 
 function isRemoteReady() {
   return Boolean(supabaseClient && state.session?.user?.id);
+}
+
+function canManageGroup(group) {
+  if (!supabaseClient) {
+    return true;
+  }
+
+  if (!state.session?.user?.id) {
+    return false;
+  }
+
+  return state.isAdmin || group.ownerId === state.session.user.id || !group.ownerId;
 }
 
 function createSupabaseClient() {
@@ -1464,6 +1553,8 @@ function migrateV1Prompt(prompt) {
     category: "",
     tags: [],
     useCases: [],
+    isPublic: false,
+    ownerId: "",
     versions: [
       {
         id: createId("version"),
@@ -1493,6 +1584,7 @@ function normalizeGroup(group) {
 
   return {
     id: group.id || createId("group"),
+    ownerId: String(group.ownerId || group.owner_id || "").trim(),
     title: String(group.title || "").trim(),
     description: String(group.description || "").trim(),
     category: String(group.category || "").trim(),
@@ -1500,6 +1592,7 @@ function normalizeGroup(group) {
     useCases: Array.isArray(group.useCases)
       ? uniqueValues(group.useCases.map(String).map((useCase) => useCase.trim()).filter(Boolean))
       : [],
+    isPublic: Boolean(group.isPublic || group.is_public),
     versions: versions.length ? versions : [createEmptyVersion()],
     createdAt: group.createdAt || now,
     updatedAt: group.updatedAt || group.createdAt || now,
@@ -1547,6 +1640,8 @@ function createEmptyGroup() {
     category: "",
     tags: [],
     useCases: [],
+    isPublic: false,
+    ownerId: "",
     versions: [createEmptyVersion()],
     createdAt: now,
     updatedAt: now,

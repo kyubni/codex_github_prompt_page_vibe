@@ -679,6 +679,12 @@ legend {
   min-height: auto;
 }
 
+.visibility-toggle {
+  justify-self: start;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
 .steps-editor {
   display: grid;
   gap: 14px;
