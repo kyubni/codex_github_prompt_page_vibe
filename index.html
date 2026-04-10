@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="브라우저에 저장되는 GitHub Pages용 프롬프트 라이브러리"
+    >
+    <title>프롬프트 라이브러리</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-copy">
+        <p class="eyebrow">Prompt Library</p>
+        <h1>프롬프트 라이브러리</h1>
+        <p class="intro">
+          사용처와 목적별로 프롬프트를 묶고, 여러 버전과 순차 입력 흐름까지 함께 보관하세요.
+        </p>
+      </div>
+      <img
+        class="header-image"
+        src="https://images.unsplash.com/photo-1649452942945-cd20ccdbb1e5?auto=format&fit=crop&w=900&q=80"
+        alt="키보드 옆에 놓인 메모 노트"
+      >
+    </header>
+
+    <main id="app" class="app-shell" tabindex="-1"></main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <noscript>
+      <p class="noscript">프롬프트 라이브러리를 사용하려면 JavaScript를 켜 주세요.</p>
+    </noscript>
+  </body>
+</html>
